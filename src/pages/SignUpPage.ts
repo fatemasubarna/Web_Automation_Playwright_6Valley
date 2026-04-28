@@ -117,24 +117,6 @@ export class SignUpPage {
       .first();
   }
 
-  toastText(): Locator {
-    // Try to resolve the "message" node inside whichever toast container matched.
-    return this.toastError()
-      .locator(
-        [
-          '.toast-message',
-          '.toast-body',
-          '.Toastify__toast-body',
-          '.notyf__message',
-          '.iziToast-message',
-          '.swal2-html-container',
-          '[class*="message"]',
-          '[class*="content"]',
-        ].join(', '),
-      )
-      .first();
-  }
-
   private async toastTextContent(): Promise<string> {
     return this.page.evaluate(() => {
       const nodes = Array.from(
@@ -272,10 +254,6 @@ export class SignUpPage {
     if (await terms.isChecked()) await terms.uncheck({ force: true });
   }
 
-  async pause(): Promise<void> {
-    await this.page.pause();
-  }
-
   async clickSubmit(options?: { force?: boolean }): Promise<void> {
     const submit = await this.getSubmitButton();
     await submit.scrollIntoViewIfNeeded();
@@ -284,7 +262,6 @@ export class SignUpPage {
       await expect(submit).toBeEnabled({ timeout: 15000 });
     }
     await this.pauseForCaptchaIfPresent();
-    await this.pause();
     await submit.click({ force: options?.force });
   }
 
@@ -331,15 +308,4 @@ export class SignUpPage {
     await this.clickSubmit();
   }
 
-  // Backward-compatible alias for older call sites.
-  async login(email: string, password: string): Promise<void> {
-    await this.signUp({
-      firstName: 'Test',
-      lastName: 'User',
-      email,
-      phone: '01700000000',
-      password,
-      acceptTerms: true,
-    });
-  }
 }

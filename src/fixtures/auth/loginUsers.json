@@ -1,0 +1,10 @@
+{
+  "validCustomer": {
+    "identity": "robert@customer.com",
+    "password": "12345678"
+  },
+  "invalidPasswordCustomer": {
+    "identity": "taylor@customer.com",
+    "password": "12345600"
+  }
+}

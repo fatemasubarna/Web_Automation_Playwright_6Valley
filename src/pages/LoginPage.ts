@@ -1,10 +1,13 @@
 import { expect, Page } from '@playwright/test';
+import { BasePage } from './BasePage';
 
-export class LoginPage {
-  constructor(private readonly page: Page) {}
+export class LoginPage extends BasePage {
+  constructor(page: Page) {
+    super(page);
+  }
 
   async navigateTo(): Promise<void> {
-    await this.page.goto('/customer/auth/login', { waitUntil: 'domcontentloaded' });
+    await this.goto('/customer/auth/login');
   }
 
   async login(email: string, password: string): Promise<void> {
@@ -18,7 +21,15 @@ export class LoginPage {
   }
 
   async clickSignIn(): Promise<void> {
+    await this.page.pause();
     await this.page.getByRole('button', { name: /^sign in$/i }).click();
+  }
+
+  async loginWithRememberMe(identity: string, password: string): Promise<void> {
+    await this.identityInput.fill(identity);
+    await this.passwordInput.fill(password);
+    await this.page.getByLabel(/remember me/i).check({ force: true });
+    await this.clickSignIn();
   }
 
   async openForgotPassword(): Promise<void> {
@@ -55,6 +66,7 @@ export class LoginPage {
   }
 
   async clickGetOtp(): Promise<void> {
+    await this.page.pause();
     await this.page.getByRole('button', { name: /get otp/i }).click();
   }
 
@@ -73,7 +85,39 @@ export class LoginPage {
   }
 
   async clickVerifyOtp(): Promise<void> {
+    await this.page.pause();
     await this.page.getByRole('button', { name: /verify/i }).click();
+  }
+
+  async submitProfileUpdate(fullName: string, email: string): Promise<void> {
+    await expect(this.page).toHaveURL(/\/update-info?/i);
+    await this.page.locator('#user-name').fill(fullName);
+    await this.page.locator('input[name="email"], input[type="email"]').first().fill(email);
+    await this.page.getByRole('button', { name: /update/i }).click();
+  }
+
+  async openUserGreeting(): Promise<void> {
+    const userGreeting = this.page.locator('.navbar-tool-text', {
+      hasText: 'Hello, Robert',
+    });
+    await expect(userGreeting).toBeVisible();
+    await userGreeting.click();
+  }
+
+  async logout(): Promise<void> {
+    await this.page.getByRole('link', { name: /logout/i }).click();
+  }
+
+  async expectIdentityValue(expectedIdentity: string): Promise<void> {
+    await expect(this.identityInput).toHaveValue(expectedIdentity);
+  }
+
+  async expectPasswordValue(expectedPassword: string): Promise<void> {
+    await expect(this.passwordInput).toHaveValue(expectedPassword);
+  }
+
+  async expectMaskedPhoneSuffix(suffix: string): Promise<void> {
+    await expect(this.page.getByText(new RegExp(`\\*{6}${suffix}`))).toBeVisible();
   }
 
   async loginWithInvalidCredentials(phone: string, password: string): Promise<string> {
@@ -128,7 +172,7 @@ export class LoginPage {
   }
 
   async isPasswordMasked(): Promise<boolean> {
-    const inputType = await this.page.getAttribute('input[name="password"]', 'type');
+    const inputType = await this.passwordInput.getAttribute('type');
     return inputType === 'password';
   }
 
@@ -136,6 +180,29 @@ export class LoginPage {
     return this.page.locator(selector).evaluate((element) => {
       return (element as HTMLInputElement).validationMessage;
     });
+  }
+
+  async expectPasswordFieldToBeMasked(): Promise<void> {
+    await expect.poll(() => this.isPasswordMasked()).toBeTruthy();
+  }
+
+  async expectIdentityFieldRequiredValidation(expectedMessage = 'Please fill out this field'): Promise<void> {
+    await expect(this.identityInput).toBeFocused();
+    await expect.poll(() => this.getIdentityFieldValidationMessage()).toContain(expectedMessage);
+  }
+
+  async getIdentityFieldValidationMessage(): Promise<string> {
+    return this.identityInput.evaluate((element) => {
+      return (element as HTMLInputElement).validationMessage;
+    });
+  }
+
+  private get identityInput() {
+    return this.page.locator('input[name="user_identity"]');
+  }
+
+  private get passwordInput() {
+    return this.page.locator('input[name="password"]');
   }
 
   private get phoneInput() {

@@ -6,3 +6,9 @@ node_modules/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+reports/cucumber/*.html
+reports/cucumber/*.json
+reports/playwright/**
+!reports/playwright/.gitkeep
+homepage_debug.png
+flash_deal_debug.png

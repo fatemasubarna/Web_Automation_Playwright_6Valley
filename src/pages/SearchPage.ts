@@ -35,17 +35,6 @@ export class SearchPage {
     await expect(this.searchResults.first()).toBeVisible({ timeout: 10000 });
   }
 
-  // Verify an item exists in the results list
-  async verifyItemInList(itemName: string): Promise<boolean> {
-    const itemLocator = this.page.locator(`text=${itemName}:visible`);
-    try {
-      await expect(itemLocator.first()).toBeVisible({ timeout: 5000 });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
   // Optional: Get first product name for debugging
   async getFirstProductName(): Promise<string> {
     const firstProduct = this.searchResults.first();

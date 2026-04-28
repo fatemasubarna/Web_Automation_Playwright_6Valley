@@ -1,17 +1,19 @@
 import { expect, test } from '@playwright/test';
 import { faker } from '@faker-js/faker';
-import { LoginPage } from '../pages/LoginPage';
+import { LoginPage } from '../src/pages/LoginPage';
+import { asEscapedUrlPattern, BASE_URL } from '../src/utils/env';
+import { makeEmail } from '../src/utils/dataFactory';
+import { loadFixture } from '../src/utils/fixtureLoader';
 
-const storefrontUrl = process.env.BASE_URL || 'https://6valley-testing.6amdev.xyz';
-const storefrontUrlPattern = new RegExp(`^${storefrontUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?$`);
-
-const makeUsPhoneNumber = (): string => {
-  const areaCode = faker.number.int({ min: 200, max: 999 }).toString();
-  const prefix = faker.number.int({ min: 200, max: 999 }).toString();
-  const lineNumber = faker.number.int({ min: 1000, max: 9999 }).toString();
-
-  return `+1${areaCode}${prefix}${lineNumber}`;
-};
+const storefrontUrlPattern = asEscapedUrlPattern(BASE_URL);
+const loginUsers = loadFixture<{
+  validCustomer: { identity: string; password: string };
+  invalidPasswordCustomer: { identity: string; password: string };
+}>('auth/loginUsers.json');
+const authPhones = loadFixture<{
+  otpExistingUser: string;
+  otpNewUser: string;
+}>('auth/phones.json');
 
 test.describe('Login Page Tests', () => {
   test.beforeEach(async ({ page }) => {
@@ -33,7 +35,7 @@ test.describe('Login Page Tests', () => {
   test('login with valid credential redirects to the storefront', async ({ page }) => {
     const loginPage = new LoginPage(page);
 
-    await loginPage.login('robert@customer.com', '12345678');
+    await loginPage.login(loginUsers.validCustomer.identity, loginUsers.validCustomer.password);
 
     await expect(page).toHaveURL(storefrontUrlPattern);
   });
@@ -41,7 +43,7 @@ test.describe('Login Page Tests', () => {
   test('login with valid email and invalid password shows the credentials error', async ({ page }) => {
     const loginPage = new LoginPage(page);
 
-    await loginPage.login('taylor@customer.com', '12345600');
+    await loginPage.login(loginUsers.invalidPasswordCustomer.identity, loginUsers.invalidPasswordCustomer.password);
 
     await expect(await loginPage.waitForErrorMessage(/credential|match/i, 10000)).toContain(
       'Credentials doesnt match',
@@ -62,8 +64,8 @@ test.describe('Login Page Tests', () => {
       hasText: 'Hello, Robert',
     });
 
-    await identityInput.fill('robert@customer.com');
-    await passwordInput.fill('12345678');
+    await identityInput.fill(loginUsers.validCustomer.identity);
+    await passwordInput.fill(loginUsers.validCustomer.password);
     await page.getByLabel(/remember me/i).check({ force: true });
     await loginPage.clickSignIn();
 
@@ -73,40 +75,8 @@ test.describe('Login Page Tests', () => {
     await page.getByRole('link', { name: /logout/i }).click();
 
     await expect(page).toHaveURL(/\/customer\/auth\/login/i);
-    await expect(identityInput).toHaveValue('robert@customer.com');
-    await expect(passwordInput).toHaveValue('12345678');
-  });
-});
-
-test.describe('Forgot Password Tests', () => {
-  test.beforeEach(async ({ page }) => {
-    const loginPage = new LoginPage(page);
-    await loginPage.navigateTo();
-  });
-
-  test('forgot password sends a reset OTP for an existing phone number', async ({ page }) => {
-    const loginPage = new LoginPage(page);
-
-    await loginPage.requestPasswordReset('+15556768899');
-
-    await loginPage.waitForPasswordResetVerificationPage();
-    await expect(await loginPage.waitForErrorMessage(/password reset otp sent/i, 10000)).toContain(
-      'Check your phone Password reset OTP sent',
-    );
-    await expect(page.getByText('We have sent a verification code to ******8899')).toBeVisible();
-  });
-
-  test('forgot password with a faker-generated phone shows the current reset message', async ({ page }) => {
-    const loginPage = new LoginPage(page);
-    const phoneNumber = makeUsPhoneNumber();
-
-    await loginPage.requestPasswordReset(phoneNumber);
-
-    await loginPage.waitForPasswordResetVerificationPage();
-    await expect(await loginPage.waitForErrorMessage(/password reset otp sent/i, 10000)).toContain(
-      'Check your phone Password reset OTP sent',
-    );
-    await expect(page.getByText(new RegExp(`\\*{6}${phoneNumber.slice(-4)}`))).toBeVisible();
+    await expect(identityInput).toHaveValue(loginUsers.validCustomer.identity);
+    await expect(passwordInput).toHaveValue(loginUsers.validCustomer.password);
   });
 });
 
@@ -116,15 +86,15 @@ test.describe('OTP Login Page Tests', () => {
     await loginPage.navigateTo();
   });
 
-  test('onew user, OTP login `test', async ({ page }) => {
+  test('new user, OTP login test', async ({ page }) => {
     const loginPage = new LoginPage(page);
     const otpInputs = page.locator('input.otp-field[name="opt-field[]"]');
     const nameInput = page.locator('#user-name');
     const fullName = `${faker.person.firstName()} ${faker.person.lastName()}`;
-    const email = `pw.otp.${Date.now()}.${faker.internet.username().replace(/[^a-z0-9]/gi, '').toLowerCase()}@example.com`;
+    const email = makeEmail('pw.otp');
 
     await loginPage.openOtpLogin();
-    await page.locator('input[placeholder="Enter phone number"], input[type="tel"]').first().fill('2015550123');
+    await page.locator('input[placeholder="Enter phone number"], input[type="tel"]').first().fill(authPhones.otpNewUser);
     await loginPage.clickGetOtp();
     await loginPage.waitForOtpVerificationPage();
 
@@ -139,26 +109,22 @@ test.describe('OTP Login Page Tests', () => {
     await page.locator('input[name="email"], input[type="email"]').first().fill(email);
     await page.getByRole('button', { name: /update/i }).click();
     await expect(page).toHaveURL(storefrontUrlPattern);
-
   });
 
+  test('existing user, OTP login test', async ({ page }) => {
+    const loginPage = new LoginPage(page);
+    const otpInputs = page.locator('input.otp-field[name="opt-field[]"]');
 
-   test('existing user, OTP login `test', async ({ page }) => {
-   const loginPage = new LoginPage(page);
-   const otpInputs = page.locator('input.otp-field[name="opt-field[]"]');
+    await loginPage.openOtpLogin();
+    await page.locator('input[placeholder="Enter phone number"], input[type="tel"]').first().fill(authPhones.otpExistingUser);
 
-   await loginPage.openOtpLogin();
-    await page.locator('input[placeholder="Enter phone number"], input[type="tel"]').first().fill('+15551112222');
+    await loginPage.clickGetOtp();
+    await loginPage.waitForOtpVerificationPage();
+    for (let index = 0; index < 6; index += 1) {
+      await otpInputs.nth(index).fill('123456'[index]);
+    }
 
-     await loginPage.clickGetOtp();
-     await loginPage.waitForOtpVerificationPage();
-     for (let index = 0; index < 6; index += 1) {
-     await otpInputs.nth(index).fill('123456'[index])
-      };
-  await loginPage.clickVerifyOtp();
-  await expect(page).toHaveURL(storefrontUrlPattern);
-
-   });
-
-
+    await loginPage.clickVerifyOtp();
+    await expect(page).toHaveURL(storefrontUrlPattern);
+  });
 });
