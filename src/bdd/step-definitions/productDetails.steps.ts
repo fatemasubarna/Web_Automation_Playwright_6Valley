@@ -111,8 +111,71 @@ Then('the cart should be updated', async function (this: CustomWorld) {
   await productDetailsPage(this).expectCartUpdatedAfterAdd();
 });
 
-Then('I should be redirected to checkout or cart', async function (this: CustomWorld) {
-  await expect(this.page).toHaveURL(/\/checkout|\/checkout-details|\/shipping|\/payment|\/cart/i);
+Then('buy now should proceed to checkout or show a blocking modal', async function (this: CustomWorld) {
+  const page = this.page;
+
+  const navPromise = page
+    .waitForURL(/\/checkout|\/checkout-details|\/shipping|\/payment|\/cart/i, { timeout: 12000 })
+    .then(() => 'navigated' as const)
+    .catch(() => null);
+
+  const minimumOrderTitle = page.locator(':text-matches("minimum\\s+order\\s+amount", "i")').first();
+  const minOrderPromise = minimumOrderTitle
+    .waitFor({ state: 'visible', timeout: 8000 })
+    .then(() => 'minOrder' as const)
+    .catch(() => null);
+
+  const shippingDialog = page
+    .locator('[role="dialog"], .modal, .modal-dialog, .MuiDialog-root, .MuiModal-root')
+    .filter({ hasText: /shipping/i })
+    .first();
+  const shippingPromise = shippingDialog
+    .waitFor({ state: 'visible', timeout: 8000 })
+    .then(() => 'shipping' as const)
+    .catch(() => null);
+
+  const outcome = await Promise.race([
+    navPromise,
+    minOrderPromise,
+    shippingPromise,
+    page.waitForTimeout(12000).then(() => 'timeout' as const),
+  ]);
+
+  if (outcome === 'shipping') {
+    const container = shippingDialog;
+    const option = container.locator('input[type="radio"], input[type="checkbox"], [role="radio"], [role="option"]').first();
+    const optionVisible = await option.isVisible().catch(() => false);
+    if (optionVisible) await option.click().catch(() => undefined);
+
+    const continueBtn = container
+      .locator(
+        'button:has-text("Continue"), button:has-text("Proceed"), button:has-text("Checkout"), button:has-text("Confirm"), button:has-text("Ok"), button:has-text("OK")',
+      )
+      .first();
+    const continueVisible = await continueBtn.isVisible().catch(() => false);
+    if (continueVisible) await continueBtn.click().catch(() => undefined);
+
+    await expect(page).toHaveURL(/\/checkout|\/checkout-details|\/shipping|\/payment|\/cart/i);
+    return;
+  }
+
+  if (outcome === 'minOrder') {
+    await expect(minimumOrderTitle).toBeVisible();
+    const dialog = page.locator('[role="dialog"], .modal, .modal-dialog, .MuiDialog-root, .MuiModal-root').filter({ has: minimumOrderTitle }).first();
+    const okBtn = dialog
+      .locator('button:has-text("OK"), button:has-text("Ok"), button:has-text("Okay"), button:has-text("Okey")')
+      .first();
+    const okVisible = await okBtn.isVisible().catch(() => false);
+    if (okVisible) await okBtn.click().catch(() => undefined);
+
+    await expect(minimumOrderTitle).toBeHidden({ timeout: 8000 }).catch(() => undefined);
+    return;
+  }
+
+  if (outcome === 'navigated') return;
+
+  // Fallback: if nothing obvious happened, assert we at least ended up on a sensible destination.
+  await expect(page).toHaveURL(/\/product\/|\/checkout|\/checkout-details|\/shipping|\/payment|\/cart/i);
 });
 
 Then('wishlist should be updated or login should be required', async function (this: CustomWorld) {

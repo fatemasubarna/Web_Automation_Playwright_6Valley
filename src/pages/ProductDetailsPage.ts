@@ -146,7 +146,25 @@ export class ProductDetailsPage {
       .first();
     this.similarProductLinks = this.similarProductsSection.locator('a[href*="/product/"]');
 
-    this.toast = this.page.locator(':text-matches("added\\s+to\\s+cart|added\\s+to\\s+wishlist|success|added\\s+successfully", "i")').first();
+    // Toasts/snackbars are often transient and can render in different containers across environments.
+    // Prefer a broad container locator + text filter rather than a single fragile selector.
+    this.toast = this.page
+      .locator(
+        [
+          '[role="alert"]',
+          '[aria-live="polite"]',
+          '[aria-live="assertive"]',
+          '.toast',
+          '.toast-success',
+          '.Toastify__toast',
+          '.snackbar',
+          '.MuiSnackbar-root',
+          '.notistack-Snackbar',
+          '.notistack-SnackbarContainer',
+        ].join(', '),
+      )
+      .filter({ hasText: /added\s+to\s+cart|added\s+successfully|success/i })
+      .first();
     this.cartCountBadge = this.page
       .locator(
         [
@@ -304,13 +322,50 @@ export class ProductDetailsPage {
   }
 
   async expectCartUpdatedAfterAdd(): Promise<void> {
-    // Cart updates can be subtle: toast OR cart count badge OR other mini-cart indicator.
+    // Cart updates can be subtle and UI feedback can be short-lived.
+    // Prefer a stable state change (cart count) and treat toast as best-effort.
     const miniCart = this.page.locator('[data-testid*="cart" i] :text-matches("^\\s*\\d+\\s*$", "i"), .navbar-tool-icon-box .count').first();
-    await Promise.race([
-      expect(this.toast).toBeVisible({ timeout: 10000 }),
-      expect(this.cartCountBadge).toBeVisible({ timeout: 10000 }),
-      expect(miniCart).toBeVisible({ timeout: 10000 }),
+
+    const readCount = async (badge: Locator): Promise<number | null> => {
+      const visible = await badge.isVisible().catch(() => false);
+      if (!visible) return null;
+      const raw = ((await badge.textContent()) ?? '').trim();
+      const match = raw.match(/\d+/);
+      if (!match) return null;
+      const value = Number.parseInt(match[0], 10);
+      return Number.isFinite(value) ? value : null;
+    };
+
+    const beforeCount = (await readCount(this.cartCountBadge)) ?? (await readCount(miniCart));
+
+    const waitForToast = this.toast
+      .waitFor({ state: 'visible', timeout: 10000 })
+      .then(() => 'toast' as const)
+      .catch(() => null);
+
+    const waitForCountChange = (async () => {
+      if (beforeCount === null) {
+        await expect
+          .poll(async () => (await readCount(this.cartCountBadge)) ?? (await readCount(miniCart)) ?? -1, { timeout: 10000 })
+          .toBeGreaterThanOrEqual(1);
+        return 'count' as const;
+      }
+
+      await expect
+        .poll(async () => (await readCount(this.cartCountBadge)) ?? (await readCount(miniCart)) ?? beforeCount, { timeout: 10000 })
+        .toBeGreaterThanOrEqual(beforeCount + 1);
+      return 'count' as const;
+    })().catch(() => null);
+
+    const outcome = await Promise.race([
+      waitForCountChange,
+      waitForToast,
     ]);
+
+    if (outcome) return;
+
+    // Final fallback: if nothing was detected, show a clear error instead of a generic timeout.
+    throw new Error('Expected cart to update after Add to cart (cart count change or success toast), but no signal was observed.');
   }
 
   async toggleWishlistIfPresent(): Promise<void> {
