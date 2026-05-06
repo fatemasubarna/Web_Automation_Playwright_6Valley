@@ -21,6 +21,7 @@ export class CustomWorld extends World {
   generatedEmail?: string;
   generatedFullName?: string;
   lastErrorMessage?: string;
+  selectedProductTitleFromList?: string;
 
   constructor(options: IWorldOptions) {
     super(options);
@@ -31,6 +32,7 @@ export class CustomWorld extends World {
     this.generatedEmail = undefined;
     this.generatedFullName = undefined;
     this.lastErrorMessage = undefined;
+    this.selectedProductTitleFromList = undefined;
   }
 }
 
